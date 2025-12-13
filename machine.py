@@ -581,7 +581,11 @@ class PDP11:
             #       (vs masking the addition) gains another 1.7% on top.
 
             thisPC = self.r[7]
-            self.r[7] = thisPC + 2
+            # XXX note that getting wrap-around correct costs ~~1% performance
+            if thisPC == 0o177776:
+                self.r[7] = 0
+            else:
+                self.r[7] = thisPC + 2
 
             mmu.MMR1_staged = 0     # see discussion in go_trap
             mmu.MMR2 = thisPC       # per handbook
@@ -590,11 +594,6 @@ class PDP11:
             try:
                 inst = mmu.wordRW(thisPC)
                 op4_dispatch_table[inst >> 12](self, inst)
-            except IndexError:      # PC wrapped to 0o200000, or bug
-                if thisPC == 0o200000:
-                    self.r[7] = 0
-                    continue
-                raise               # else a genuine bug
             except PDPTrap as trap:
                 abort_trap = trap
                 self.straps |= self.STRAPBITS.HIGHEST_ABORTTRAP

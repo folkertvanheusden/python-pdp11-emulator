@@ -1434,6 +1434,45 @@ class TestMethods(unittest.TestCase):
         # and the saved PSW which should be plain user mode, N-bit
         self.assertEqual(p.mmu.wordRW(0o160000 - 2), (p.USER << 14) | 0o10)
 
+    def test_pcwrap2(self):
+        # a second test verifying the subtleties of R7
+        p, a = self.u64mapped_pdp()
+        p.run(pc=a)
+
+        # put machine into USER mode, clear all registers (on principle)
+        # NOTE: DO NOT BASH p.psw_curmode directly, that bypasses all
+        #       the KSP vs USP magic
+        p.psw = (p.USER << 14)
+
+        for i in range(8):
+            p.r[i] = 0
+
+        # jam a MOV R7,R3 instruction at the end of user space
+        # and a MOV R3,R4 instruction at location 0
+        # The test verifies these correctly wrapped around
+        p.mmu.wordRW(0o177776, 0o010703)
+        p.mmu.wordRW(0, 0o010304)
+
+        # set R4 to something else so will know the sequence finished
+        p.r[4] = 0o123456
+
+        # NOTE ... when PC reaches location 2, it executes a HALT (0).
+        # This causes a ReservedInstruction trap in user mode. Since
+        # none of the vectors have been filled in, control will transfer
+        # (in KERNEL mode, because PSW in vector is zero) to location 0,
+        # where it will find another HALT instruction (i.e., 0) and stop.
+        # So all this works without making more scaffolding for that...
+
+        p.run(pc=0o177776)
+        self.check16(p)
+
+        # the zero pc should be in r4
+        self.assertEqual(p.r[4], 0)
+
+        # the ReservedInstruction trap should have put the (user) PC
+        # value which is 2 past the halt instruction (i.e., 4) on stack
+        self.assertEqual(p.mmu.wordRW(0o160000 - 4), 4)
+
     def test_trap(self):
         # test some traps
 
