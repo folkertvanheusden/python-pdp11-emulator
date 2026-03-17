@@ -196,7 +196,12 @@ class PDP11:
         except TypeError:
             self.logger = logger
         else:
-            loglevel = logging.getLevelNamesMapping().get(loglevel, loglevel)
+            try:
+                # If it is a string, like 'WARNING', get corresponding int
+                loglevel = getattr(logging, loglevel)
+            except AttributeError:
+                # just assume user has given something that makes sense
+                pass
             logger = logging.getLogger(logger)
             if not logger.hasHandlers():     # XXX is this the right/best way?
                 logger.propagate = False
