@@ -1,3 +1,5 @@
+import gc
+import json
 import time
 from machine import PDP1170
 from kw11 import KW11
@@ -209,6 +211,12 @@ def _byte_phys_write(p, b, addr):
     words = [(b[i+1] << 8) | b[i] for i in range(0, len(b), 2)]
     p.physRW_N(addr, len(words), words)
 
+def _byte_phys_read(p, addr):
+    if addr & 1:
+        b = p.physRW(addr & ~1) >> 8
+    else:
+        b = p.physRW(addr) & 255
+    return b
 
 def load_lda_f(p, f):
     """Read  and load open file f as an 'absolute loader' file
@@ -348,6 +356,67 @@ def _bootmsg(msg):
                 print('\r', end='')
             print(c, end='')
 
+def compare_values(v1, v2, what):
+    if v1 != v2:
+        print(f'Value for {what}: 0o{v1:06o} (is) != O0{v2:06o} (should be)')
+
+def boot_json(file):
+    j = json.load(open(file, 'r'))
+    n = 0
+    for test in j:
+        print(f'Running test with id: {test["id"]}')
+
+        p = PDP1170(loglevel='DEBUG')
+
+        # set
+        try:
+            before = test['before']
+            for mem_rec in before['memory']:
+                for addr in mem_rec:
+                    _byte_phys_write(p, bytes([mem_rec[addr],]), int(addr, base=8))
+            p.r[p.PC] = before['PC']
+            p.r[p.SP] = before['stack-0']  # only (hopefully) run-mode 0 is used
+            p.mmu.MMR1 = before['mmr1']
+            p.mmu.MMR2 = before['mmr2']
+            for set_ in range(2):
+                if set_ == 1:
+                    continue  # only using set 0
+                for reg in range(6):
+                    value = before[f'reg-{reg}.{set_}']
+                    p.r[reg] = value
+            p.psw = before['PSW']
+        except Exception as e:
+            print(f'Trap during init: {e}')
+            continue  # makes no sense to try
+
+        # Go!
+        try:
+            p.run_steps(before['run-n-instructions'])
+        except Exception as e:
+            print(f'Trap during execution: {e}')
+
+        # check
+        after = test['after']
+        compare_values(p.r[p.PC], after['PC'], 'PC')
+        compare_values(p.r[p.SP], after['stack-0'], 'SP[kernel]')
+        compare_values(p.mmu.MMR1, after['mmr1'], 'MMR1')
+        compare_values(p.mmu.MMR2, after['mmr2'], 'MMR2')
+        for set_ in range(2):
+            if set_ == 1:
+                continue  # only using set 0
+            for reg in range(6):
+                value = after[f'reg-{reg}.{set_}']
+                compare_values(p.r[reg], value, f'REG[{reg}]')
+        compare_values(p.psw, after['PSW'], 'PSW')
+        for mem_rec in after['memory']:
+            for addr in mem_rec:
+                compare_values(_byte_phys_read(p, int(addr, base=8)), mem_rec[addr], f'mem:0o{addr}')
+
+        del p
+        n += 1
+        if n >= 1000:
+            n = 0
+            gc.collect()
 
 # USE:
 #    python3 boot.py
@@ -367,6 +436,7 @@ if __name__ == "__main__":
     parser.add_argument('--rk', action='store_true')
     parser.add_argument('--instlog', action='store_true')
     parser.add_argument('--lda', action='store', default=None)
+    parser.add_argument('--json', action='store', default=None)
     parser.add_argument('--bootmsg', type=str)
     args = parser.parse_args()
 
@@ -418,7 +488,9 @@ if __name__ == "__main__":
                 "Then, at the ':' prompt, typically type: hp(0,0)unix\n" + \
                 f"{window_textra2}"
 
-    if args.lda:
+    if args.json:
+        boot_json(args.json)
+    elif args.lda:
         boot_lda(p, args.lda)
     else:
         boot_unix(p, runoptions=runoptions, **unixboot_options)

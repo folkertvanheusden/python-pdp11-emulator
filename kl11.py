@@ -117,16 +117,18 @@ class KL11:
         # transmit buffer status (address: baseaddr + 4)
         self.t_ienable = False
 
+        serverloop = None
         if use_stdin:
             if not termios:
                 raise ValueError("Cannot use_stdin without termios module")
             serverloop = self._stdindeferred
-        else:
+        elif self.send_telnet:
             serverloop = self._connectionserver
 
         # The socket server connection/listener
-        self._t = threading.Thread(target=serverloop, daemon=True)
-        self._t.start()
+        if serverloop:
+            self._t = threading.Thread(target=serverloop, daemon=True)
+            self._t.start()
 
     def _telnetsequences(self, s):
         """If telnet is being used to connect, turn off local echo etc."""
