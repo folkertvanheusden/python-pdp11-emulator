@@ -1,5 +1,7 @@
 import gc
 import json
+import os
+import psutil
 import time
 from machine import PDP1170
 from kw11 import KW11
@@ -362,7 +364,6 @@ def compare_values(v1, v2, what):
 
 def boot_json(file):
     j = json.load(open(file, 'r'))
-    n = 0
     for test in j:
         print(f'Running test with id: {test["id"]}')
 
@@ -413,9 +414,8 @@ def boot_json(file):
                 compare_values(_byte_phys_read(p, int(addr, base=8)), mem_rec[addr], f'mem:0o{addr}')
 
         del p
-        n += 1
-        if n >= 1000:
-            n = 0
+
+        if psutil.virtual_memory().percent > 90:
             gc.collect()
 
 # USE:
