@@ -400,6 +400,7 @@ def boot_json(file):
         after = test['after']
         compare_values(p.r[p.PC], after['PC'], 'PC')
         compare_values(p.r[p.SP], after['stack-0'], 'SP[kernel]')
+        p.mmu._MMR1commit()
         compare_values(p.mmu.MMR1, after['mmr1'], 'MMR1')
         compare_values(p.mmu.MMR2, after['mmr2'], 'MMR2')
         for set_ in range(2):
